@@ -13,7 +13,6 @@ namespace NetQuotaManager
         [STAThread]
         static void Main()
         {
-            // رفع مشکل نصفه نمایش داده شدن در ویندوزهایی که زوم بیش از 100% دارند
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -36,18 +35,18 @@ namespace NetQuotaManager
         private Label lblTabTitle;
         private Label lblTabContent;
 
-        // لیبل‌های داشبورد برای آپدیت زنده
         private Label valUsage;
         private Label valRemaining;
         private Label valStatus;
 
         private NotifyIcon trayIcon;
         private bool isAppVisible = false;
-        private Timer networkTimer;
+        
+        // اصلاح خطای ابهام تایمر در گیت‌هاب
+        private System.Windows.Forms.Timer networkTimer;
 
         public MainForm()
         {
-            // جلوگیری از به هم ریختگی چیدمان
             this.AutoScaleMode = AutoScaleMode.None;
             
             LoadData();
@@ -82,8 +81,8 @@ namespace NetQuotaManager
                 }
             };
 
-            // تایمر برای شمارش واقعی اینترنت در پس‌زمینه
-            networkTimer = new Timer() { Interval = 10000 };
+            // استفاده دقیق از مسیر تایمر برای جلوگیری از خطای کامپایل
+            networkTimer = new System.Windows.Forms.Timer() { Interval = 10000 };
             networkTimer.Tick += NetworkTimer_Tick;
             networkTimer.Start();
         }
@@ -129,7 +128,7 @@ namespace NetQuotaManager
                 {
                     currentUsageBytes += diff;
                     SaveData();
-                    if (isAppVisible) RefreshDashboardUI(); // آپدیت زنده داشبورد اگر باز است
+                    if (isAppVisible) RefreshDashboardUI(); 
                 }
                 lastRecordedBytes = currentTotal;
             }
@@ -169,7 +168,7 @@ namespace NetQuotaManager
             if (ShowLoginForm())
             {
                 isAppVisible = true;
-                RefreshDashboardUI(); // آپدیت اطلاعات هنگام ورود
+                RefreshDashboardUI(); 
                 this.Show();
                 this.WindowState = FormWindowState.Normal;
                 this.BringToFront();
@@ -247,7 +246,6 @@ namespace NetQuotaManager
             Label lblHeaderTitle = new Label() { Text = "داشبورد مدیریت", Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, Width = 300 };
             pnlDashboard.Controls.Add(lblHeaderTitle);
 
-            // کارت‌ها با ابعاد منعطف‌تر
             Panel c1 = new Panel() { Left = 30, Top = 90, Width = 350, Height = 150, BackColor = Color.White };
             c1.Controls.Add(new Label() { Text = "سهمیه ماهانه", Font = new Font("Tahoma", 9, FontStyle.Bold), ForeColor = Color.Gray, Left = 20, Top = 15, Width = 200 });
             valUsage = new Label() { Font = new Font("Tahoma", 10), ForeColor = Color.FromArgb(40,40,50), Left = 20, Top = 50, Width = 320, Height = 80 };
@@ -265,7 +263,6 @@ namespace NetQuotaManager
 
             pnlDashboard.Controls.Add(c1); pnlDashboard.Controls.Add(c2); pnlDashboard.Controls.Add(c3);
 
-            // بخش تنظیم حجم
             Panel cardAction = new Panel() { Left = 30, Top = 270, Width = 810, Height = 160, BackColor = Color.White };
             cardAction.Controls.Add(new Label() { Text = "تنظیم و آپدیت حجم ماهانه جدید", Font = new Font("Tahoma", 11, FontStyle.Bold), Left = 25, Top = 20, Width = 400 });
             cardAction.Controls.Add(new Label() { Text = "گیگابایت:", Left = 25, Top = 72, Width = 70, Font = new Font("Tahoma", 10) });
@@ -282,9 +279,8 @@ namespace NetQuotaManager
                 currentUsageBytes = 0;
                 isInternetCut = false;
                 SaveData();
-                InitializeNetworkBaseline(); // ریست کردن شمارشگر
+                InitializeNetworkBaseline(); 
                 
-                // روشن کردن وای‌فای
                 try { Process.Start(new ProcessStartInfo("netsh", "interface set interface \"Wi-Fi\" admin=enabled") { CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden }); } catch { }
                 
                 RefreshDashboardUI();
