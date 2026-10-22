@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -25,11 +26,14 @@ namespace NetQuotaManager
         private const string AdminPass = "009855Vh";
         private static readonly string DataFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NetQuotaData.txt");
 
-        private long monthlyLimitBytes = 0; // پیش‌فرض 0 تا زمانی که مدیر خودش حجم بدهد
+        private long monthlyLimitBytes = 0; 
         private long currentUsageBytes = 0;
         private long lastRecordedBytes = -1;
         private bool isInternetCut = false;
-        private bool hasShownWarning = false; // متغیر برای بررسی اینکه آیا اخطار 90 درصد داده شده یا نه
+        private bool hasShownWarning = false; 
+
+        // لیست ذخیره نام کارت شبکه‌ها برای روشن کردن مجدد
+        private List<string> disabledInterfaces = new List<string>();
 
         private Panel pnlDashboard;
         private Panel pnlOtherTabs;
@@ -132,17 +136,14 @@ namespace NetQuotaManager
                 lastRecordedBytes = currentTotal;
             }
 
-            // بررسی محدودیت و هشدارها (فقط اگر مدیر حجمی تعیین کرده باشد)
             if (monthlyLimitBytes > 0)
             {
-                // هشدار وقتی مصرف به 90 درصد رسید
                 if (!hasShownWarning && currentUsageBytes >= (monthlyLimitBytes * 0.9) && currentUsageBytes < monthlyLimitBytes)
                 {
-                    hasShownWarning = true; // ثبت اینکه هشدار داده شد تا مدام پیام ندهد
+                    hasShownWarning = true;
                     MessageBox.Show("هشدار: شما به ۹۰٪ از سهمیه مصرف ماهانه خود رسیده‌اید! لطفاً مصرف خود را مدیریت کنید تا اینترنت شما قطع نشود.", "اخطار مصرف نزدیک به اتمام", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
-                // قطع کامل وقتی مصرف به 100 درصد رسید
                 if (currentUsageBytes >= monthlyLimitBytes)
                 {
                     CutInternetAccess();
@@ -150,22 +151,22 @@ namespace NetQuotaManager
             }
         }
 
-        // تضمین قطع اینترنت با فایروال قدرتمند ویندوز
         private void CutInternetAccess()
         {
             try
             {
                 isInternetCut = true;
+                disabledInterfaces.Clear(); // پاک کردن لیست قبلی
 
-                // 1. مسدود کردن خروجی اینترنت از طریق فایروال (تضمین 100 درصدی قطع ارتباط)
                 Process.Start(new ProcessStartInfo("netsh", "advfirewall firewall add rule name=\"NetQuotaBlock\" dir=out action=block enable=yes") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
 
-                // 2. غیرفعال کردن کارت شبکه (لایه دوم)
                 foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
                 {
                     if (nic.OperationalStatus == OperationalStatus.Up && 
                        (nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || nic.NetworkInterfaceType == NetworkInterfaceType.Ethernet))
                     {
+                        // یادداشت کردن نام شبکه قبل از قطع شدن
+                        disabledInterfaces.Add(nic.Name);
                         Process.Start(new ProcessStartInfo("netsh", $"interface set interface \"{nic.Name}\" admin=disabled") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
                     }
                 }
@@ -176,20 +177,25 @@ namespace NetQuotaManager
             catch { }
         }
 
-        // فعال‌سازی مجدد و کامل اینترنت
         private void EnableInternetAccess()
         {
             try
             {
-                // 1. حذف قانون مسدودکننده فایروال
                 Process.Start(new ProcessStartInfo("netsh", "advfirewall firewall delete rule name=\"NetQuotaBlock\"") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
 
-                // 2. فعال‌سازی کارت‌های شبکه
-                foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+                // 1. روشن کردن نام‌هایی که برنامه خودش یادداشت کرده بود
+                foreach (string name in disabledInterfaces)
                 {
-                    if (nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || nic.NetworkInterfaceType == NetworkInterfaceType.Ethernet)
+                    Process.Start(new ProcessStartInfo("netsh", $"interface set interface \"{name}\" admin=enabled") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
+                }
+
+                // 2. روشن کردن نام‌های رایج برای محکم‌کاری (در صورتی که یادداشت خالی مانده باشد)
+                string[] commonNames = { "Wi-Fi", "Ethernet", "Local Area Connection" };
+                foreach (string name in commonNames)
+                {
+                    if (!disabledInterfaces.Contains(name))
                     {
-                        Process.Start(new ProcessStartInfo("netsh", $"interface set interface \"{nic.Name}\" admin=enabled") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
+                        Process.Start(new ProcessStartInfo("netsh", $"interface set interface \"{name}\" admin=enabled") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
                     }
                 }
             }
@@ -296,7 +302,6 @@ namespace NetQuotaManager
             Label lblHeaderTitle = new Label() { Text = "داشبورد مدیریت", Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, AutoSize = true };
             pnlDashboard.Controls.Add(lblHeaderTitle);
 
-            // اصلاح متون به صورت وسط‌چین در کارت‌ها برای جلوگیری از نامنظمی
             Panel c1 = new Panel() { Left = 30, Top = 90, Width = 330, Height = 150, BackColor = Color.White };
             c1.Controls.Add(new Label() { Text = "سهمیه ماهانه", Font = new Font("Tahoma", 10, FontStyle.Bold), ForeColor = Color.Gray, Left = 20, Top = 15, AutoSize = true });
             valUsage = new Label() { Font = new Font("Tahoma", 10), ForeColor = Color.FromArgb(40,40,50), Left = 10, Top = 50, Width = 310, Height = 90, TextAlign = ContentAlignment.MiddleCenter, AutoSize = false };
@@ -327,17 +332,16 @@ namespace NetQuotaManager
 
             Button btnUpdate = new Button() { Text = "اعمال حجم و وصل اینترنت", Left = 340, Top = 65, Width = 220, Height = 35, BackColor = Color.FromArgb(40, 167, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 9, FontStyle.Bold) };
             
-            // عملکرد جدید دکمه اعمال حجم
             btnUpdate.Click += (s, e) => {
                 monthlyLimitBytes = ((long)numGB.Value * 1024 * 1024 * 1024) + ((long)numMB.Value * 1024 * 1024);
-                currentUsageBytes = 0; // صفر کردن مصرف با اعمال حجم جدید
+                currentUsageBytes = 0; 
                 isInternetCut = false;
-                hasShownWarning = false; // ریست کردن اخطار برای دوره جدید
+                hasShownWarning = false; 
                 
                 SaveData();
                 InitializeNetworkBaseline(); 
                 
-                EnableInternetAccess(); // فراخوانی سیستم اتصال مجدد هوشمند
+                EnableInternetAccess(); 
                 
                 RefreshDashboardUI();
                 MessageBox.Show("حجم جدید با موفقیت اعمال شد و اینترنت متصل گردید.", "موفقیت", MessageBoxButtons.OK, MessageBoxIcon.Information);
