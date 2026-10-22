@@ -42,7 +42,6 @@ namespace NetQuotaManager
         private NotifyIcon trayIcon;
         private bool isAppVisible = false;
         
-        // اصلاح خطای ابهام تایمر در گیت‌هاب
         private System.Windows.Forms.Timer networkTimer;
 
         public MainForm()
@@ -81,7 +80,6 @@ namespace NetQuotaManager
                 }
             };
 
-            // استفاده دقیق از مسیر تایمر برای جلوگیری از خطای کامپایل
             networkTimer = new System.Windows.Forms.Timer() { Interval = 10000 };
             networkTimer.Tick += NetworkTimer_Tick;
             networkTimer.Start();
@@ -139,15 +137,48 @@ namespace NetQuotaManager
             }
         }
 
+        // سیستم هوشمند قطع اینترنت بر اساس نام واقعی کارت شبکه
         private void CutInternetAccess()
         {
             try
             {
-                ProcessStartInfo psi = new ProcessStartInfo("netsh", "interface set interface \"Wi-Fi\" admin=disabled") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden };
-                Process.Start(psi);
+                // ۱. پیدا کردن نام دقیق کارت شبکه و قطع آن
+                foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (nic.OperationalStatus == OperationalStatus.Up && 
+                       (nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || nic.NetworkInterfaceType == NetworkInterfaceType.Ethernet))
+                    {
+                        ProcessStartInfo psi = new ProcessStartInfo("netsh", $"interface set interface \"{nic.Name}\" admin=disabled") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden };
+                        Process.Start(psi);
+                    }
+                }
+                
+                // ۲. لایه پشتیبان: آزادسازی آی‌پی سیستم جهت قطع فوری ارتباط
+                Process.Start(new ProcessStartInfo("ipconfig", "/release") { CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden });
+
                 isInternetCut = true;
                 if (isAppVisible) RefreshDashboardUI();
-                MessageBox.Show("سقف حجم ماهانه به پایان رسید و اینترنت قطع شد.", "هشدار", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("سقف حجم ماهانه به پایان رسید و اینترنت به طور کامل قطع شد.", "هشدار مصرف", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            catch { }
+        }
+
+        private void EnableInternetAccess()
+        {
+            try
+            {
+                // ۱. فعال‌سازی تمامی کارت‌های شبکه وای‌فای و اترنت
+                foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || nic.NetworkInterfaceType == NetworkInterfaceType.Ethernet)
+                    {
+                        ProcessStartInfo psi = new ProcessStartInfo("netsh", $"interface set interface \"{nic.Name}\" admin=enabled") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden };
+                        Process.Start(psi);
+                    }
+                }
+                
+                // ۲. لایه پشتیبان: دریافت مجدد آی‌پی
+                Process.Start(new ProcessStartInfo("ipconfig", "/renew") { CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden });
             }
             catch { }
         }
@@ -187,14 +218,20 @@ namespace NetQuotaManager
         private bool ShowLoginForm()
         {
             Form loginForm = new Form() { Width = 850, Height = 550, FormBorderStyle = FormBorderStyle.FixedDialog, Text = "ورود مدیر", StartPosition = FormStartPosition.CenterScreen, MaximizeBox = false, MinimizeBox = false, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, BackColor = Color.White };
-            Label lblLoginHeader = new Label() { Text = "ورود مدیریت", ForeColor = Color.FromArgb(30, 30, 40), Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 50, Top = 100, Width = 400 };
+            
+            // اضافه شدن AutoSize برای جلوگیری از بریده شدن متون
+            Label lblLoginHeader = new Label() { Text = "ورود مدیریت", ForeColor = Color.FromArgb(30, 30, 40), Font = new Font("Tahoma", 18, FontStyle.Bold), Left = 50, Top = 100, AutoSize = true };
             TextBox txtPassword = new TextBox() { Left = 50, Top = 180, Width = 350, Height = 35, PasswordChar = '●', Font = new Font("Tahoma", 12) };
             Button btnSignIn = new Button() { Text = "تایید و ورود", Left = 50, Top = 230, Width = 350, Height = 45, BackColor = Color.FromArgb(13, 110, 253), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 11, FontStyle.Bold) };
 
             bool success = false;
             btnSignIn.Click += (s, e) => { if (txtPassword.Text == AdminPass) { success = true; loginForm.Close(); } else MessageBox.Show("رمز عبور اشتباه است!"); };
-            loginForm.Controls.Add(lblLoginHeader); loginForm.Controls.Add(txtPassword); loginForm.Controls.Add(btnSignIn);
+            
+            loginForm.Controls.Add(lblLoginHeader); 
+            loginForm.Controls.Add(txtPassword); 
+            loginForm.Controls.Add(btnSignIn);
             loginForm.ShowDialog();
+            
             return success;
         }
 
@@ -208,7 +245,7 @@ namespace NetQuotaManager
             this.BackColor = Color.FromArgb(245, 247, 250);
 
             Panel sidebar = new Panel() { Width = 250, Dock = DockStyle.Right, BackColor = Color.FromArgb(15, 32, 67) };
-            Label lblBrand = new Label() { Text = "🛡️ مدیریت سهمیه شبکه", ForeColor = Color.White, Font = new Font("Tahoma", 11, FontStyle.Bold), Left = 15, Top = 30, Width = 220 };
+            Label lblBrand = new Label() { Text = "🛡️ مدیریت سهمیه شبکه", ForeColor = Color.White, Font = new Font("Tahoma", 11, FontStyle.Bold), Left = 15, Top = 30, AutoSize = true };
             sidebar.Controls.Add(lblBrand);
 
             CreateDashboardPanel();
@@ -228,7 +265,7 @@ namespace NetQuotaManager
                     else {
                         pnlDashboard.Visible = false; pnlOtherTabs.Visible = true;
                         lblTabTitle.Text = btnMenu.Tag.ToString();
-                        lblTabContent.Text = $"اطلاعات مربوط به '{btnMenu.Tag}' به زودی در نسخه‌های بعدی در این قسمت نمایش داده می‌شود.\nدر حال حاضر موتور پردازشی پس‌زمینه این بخش فعال است.";
+                        lblTabContent.Text = $"اطلاعات مربوط به '{btnMenu.Tag}' به زودی در این قسمت نمایش داده می‌شود.";
                     }
                 };
                 sidebar.Controls.Add(btnMenu);
@@ -243,33 +280,36 @@ namespace NetQuotaManager
         private void CreateDashboardPanel()
         {
             pnlDashboard = new Panel() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(245, 247, 250), Visible = true };
-            Label lblHeaderTitle = new Label() { Text = "داشبورد مدیریت", Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, Width = 300 };
+            
+            // رفع بریده شدن عنوان داشبورد با AutoSize
+            Label lblHeaderTitle = new Label() { Text = "داشبورد مدیریت", Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, AutoSize = true };
             pnlDashboard.Controls.Add(lblHeaderTitle);
 
             Panel c1 = new Panel() { Left = 30, Top = 90, Width = 350, Height = 150, BackColor = Color.White };
-            c1.Controls.Add(new Label() { Text = "سهمیه ماهانه", Font = new Font("Tahoma", 9, FontStyle.Bold), ForeColor = Color.Gray, Left = 20, Top = 15, Width = 200 });
+            c1.Controls.Add(new Label() { Text = "سهمیه ماهانه", Font = new Font("Tahoma", 10, FontStyle.Bold), ForeColor = Color.Gray, Left = 20, Top = 15, AutoSize = true });
             valUsage = new Label() { Font = new Font("Tahoma", 10), ForeColor = Color.FromArgb(40,40,50), Left = 20, Top = 50, Width = 320, Height = 80 };
             c1.Controls.Add(valUsage);
 
             Panel c2 = new Panel() { Left = 400, Top = 90, Width = 200, Height = 150, BackColor = Color.White };
-            c2.Controls.Add(new Label() { Text = "باقیمانده", Font = new Font("Tahoma", 9, FontStyle.Bold), ForeColor = Color.Gray, Left = 20, Top = 15, Width = 150 });
+            c2.Controls.Add(new Label() { Text = "باقیمانده", Font = new Font("Tahoma", 10, FontStyle.Bold), ForeColor = Color.Gray, Left = 20, Top = 15, AutoSize = true });
             valRemaining = new Label() { Font = new Font("Tahoma", 10), ForeColor = Color.FromArgb(40,40,50), Left = 20, Top = 50, Width = 170, Height = 80 };
             c2.Controls.Add(valRemaining);
 
             Panel c3 = new Panel() { Left = 620, Top = 90, Width = 220, Height = 150, BackColor = Color.White };
-            c3.Controls.Add(new Label() { Text = "وضعیت اتصال", Font = new Font("Tahoma", 9, FontStyle.Bold), ForeColor = Color.Gray, Left = 20, Top = 15, Width = 150 });
+            c3.Controls.Add(new Label() { Text = "وضعیت اتصال", Font = new Font("Tahoma", 10, FontStyle.Bold), ForeColor = Color.Gray, Left = 20, Top = 15, AutoSize = true });
             valStatus = new Label() { Font = new Font("Tahoma", 10), ForeColor = Color.FromArgb(40,40,50), Left = 20, Top = 50, Width = 190, Height = 80 };
             c3.Controls.Add(valStatus);
 
             pnlDashboard.Controls.Add(c1); pnlDashboard.Controls.Add(c2); pnlDashboard.Controls.Add(c3);
 
             Panel cardAction = new Panel() { Left = 30, Top = 270, Width = 810, Height = 160, BackColor = Color.White };
-            cardAction.Controls.Add(new Label() { Text = "تنظیم و آپدیت حجم ماهانه جدید", Font = new Font("Tahoma", 11, FontStyle.Bold), Left = 25, Top = 20, Width = 400 });
-            cardAction.Controls.Add(new Label() { Text = "گیگابایت:", Left = 25, Top = 72, Width = 70, Font = new Font("Tahoma", 10) });
+            cardAction.Controls.Add(new Label() { Text = "تنظیم و آپدیت حجم ماهانه جدید", Font = new Font("Tahoma", 12, FontStyle.Bold), Left = 25, Top = 20, AutoSize = true });
+            
+            cardAction.Controls.Add(new Label() { Text = "گیگابایت:", Left = 25, Top = 72, AutoSize = true, Font = new Font("Tahoma", 10) });
             NumericUpDown numGB = new NumericUpDown() { Left = 95, Top = 70, Width = 70, Font = new Font("Tahoma", 11), Maximum = 1000, Value = 2 };
             cardAction.Controls.Add(numGB);
             
-            cardAction.Controls.Add(new Label() { Text = "مگابایت:", Left = 180, Top = 72, Width = 70, Font = new Font("Tahoma", 10) });
+            cardAction.Controls.Add(new Label() { Text = "مگابایت:", Left = 180, Top = 72, AutoSize = true, Font = new Font("Tahoma", 10) });
             NumericUpDown numMB = new NumericUpDown() { Left = 250, Top = 70, Width = 70, Font = new Font("Tahoma", 11), Maximum = 1023 };
             cardAction.Controls.Add(numMB);
 
@@ -281,7 +321,7 @@ namespace NetQuotaManager
                 SaveData();
                 InitializeNetworkBaseline(); 
                 
-                try { Process.Start(new ProcessStartInfo("netsh", "interface set interface \"Wi-Fi\" admin=enabled") { CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden }); } catch { }
+                EnableInternetAccess(); // فراخوانی سیستم اتصال مجدد هوشمند
                 
                 RefreshDashboardUI();
                 MessageBox.Show("حجم جدید با موفقیت اعمال شد و اینترنت متصل گردید.", "موفقیت", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -293,8 +333,8 @@ namespace NetQuotaManager
         private void CreateOtherTabsPanel()
         {
             pnlOtherTabs = new Panel() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(245, 247, 250), Visible = false };
-            lblTabTitle = new Label() { Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, Width = 300 };
-            lblTabContent = new Label() { Font = new Font("Tahoma", 11), ForeColor = Color.FromArgb(60,60,60), Left = 30, Top = 100, Width = 700, Height = 200 };
+            lblTabTitle = new Label() { Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, AutoSize = true };
+            lblTabContent = new Label() { Font = new Font("Tahoma", 11), ForeColor = Color.FromArgb(60,60,60), Left = 30, Top = 80, Width = 700, Height = 200 };
             pnlOtherTabs.Controls.Add(lblTabTitle);
             pnlOtherTabs.Controls.Add(lblTabContent);
         }
