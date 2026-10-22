@@ -65,7 +65,9 @@ namespace NetQuotaManager
             InitializeNetworkBaseline();
 
             trayIcon = new NotifyIcon();
-            trayIcon.Icon = SystemIcons.Shield;
+            // استخراج خودکار آیکون از خود فایل برنامه
+            trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            this.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); // تغییر آیکون پنجره‌های برنامه
             trayIcon.Text = "NetQuota Manager - فعال";
             trayIcon.Visible = true;
 
