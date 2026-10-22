@@ -1,0 +1,26 @@
+name: Build Windows App On Demand
+
+on:
+  workflow_dispatch: # ساخت فایل فقط با دستور دستی شما
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Publish App (Self-Contained Exe)
+      run: dotnet publish -c Release -r win-x64 --self-contained true -o ./publish
+
+    - name: Upload Artifact (.exe)
+      uses: actions/upload-artifact@v4
+      with:
+        name: NetQuotaManager-Pro-Exe
+        path: ./publish/*.exe
