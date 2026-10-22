@@ -1,7 +1,7 @@
 name: Build Windows App On Demand
 
 on:
-  workflow_dispatch: # ساخت فایل فقط با دستور دستی شما
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,11 +16,11 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
-    - name: Publish App (Self-Contained Exe)
-      run: dotnet publish -c Release -r win-x64 --self-contained true -o ./publish
+    - name: Publish App (Single File)
+      run: dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish
 
     - name: Upload Artifact (.exe)
       uses: actions/upload-artifact@v4
       with:
-        name: NetQuotaManager-Pro-Exe
-        path: ./publish/*.exe
+        name: NetQuotaManager-Final-Exe
+        path: ./publish/NetQuotaManager.exe
