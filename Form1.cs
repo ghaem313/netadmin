@@ -1,4 +1,3 @@
-
 using System;
 using System.Drawing;
 using System.IO;
@@ -7,6 +6,18 @@ using Microsoft.Win32;
 
 namespace NetQuotaManager
 {
+    // ۱. اضافه شدن نقطه شروع برنامه (رفع خطای CS5001)
+    static class Program
+    {
+        [STAThread]
+        static void Main()
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new MainForm());
+        }
+    }
+
     public partial class MainForm : Form
     {
         private const string AdminPass = "009855Vh";
@@ -17,7 +28,7 @@ namespace NetQuotaManager
 
         public MainForm()
         {
-            InitializeComponent();
+            // ۲. خط InitializeComponent حذف شد (رفع خطای CS0103)
             LoadData();
             
             this.Shown += (s, e) => {
