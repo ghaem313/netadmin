@@ -293,13 +293,28 @@ namespace NetQuotaManager
 
         private void AddToStartup()
         {
-            try
-            {
-                RegistryKey rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-                rk.SetValue("NetQuotaManager", Application.ExecutablePath);
-            }
-            catch { }
+    try
+    {
+        string exePath = Application.ExecutablePath;
+        
+        // ۱. ساخت یک تسک در ویندوز که برنامه را با دسترسی کامل ادمین هنگام ورود به سیستم اجرا کند
+        ProcessStartInfo psi = new ProcessStartInfo("schtasks", $"/create /tn \"NetQuotaManager\" /tr \"\\\"{exePath}\\\"\" /sc onlogon /rl highest /f")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            WindowStyle = ProcessWindowStyle.Hidden
+        };
+        Process.Start(psi);
+
+        // ۲. پاک کردن تنظیمات رجیستری قبلی که توسط ویندوز مسدود می‌شد
+        RegistryKey rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+        if (rk != null && rk.GetValue("NetQuotaManager") != null)
+        {
+            rk.DeleteValue("NetQuotaManager", false);
         }
+    }
+    catch { }
+}
 
         private void OpenAdminPanel()
         {
