@@ -12,12 +12,19 @@ namespace NetQuotaManager
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            // بررسی اینکه آیا برنامه توسط خود کاربر باز شده یا توسط استارتاپ ویندوز
+            bool startInBackground = false;
+            if (args.Length > 0 && args[0] == "-background")
+            {
+                startInBackground = true;
+            }
+
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            Application.Run(new MainForm(startInBackground));
         }
     }
 
@@ -35,14 +42,12 @@ namespace NetQuotaManager
 
         private List<string> disabledInterfaces = new List<string>();
 
-        // پنل‌های تمام صفحات
         private Panel pnlDashboard;
         private Panel pnlSettings;
         private Panel pnlMonitoring;
         private Panel pnlAlerts;
         private Panel pnlAccessControl;
         
-        // المان‌های صفحات
         private Label valUsage, valRemaining, valStatus;
         private Label lblDownSpeed, lblUpSpeed;
         private Panel barDownSpeed, barUpSpeed;
@@ -56,18 +61,25 @@ namespace NetQuotaManager
         private System.Windows.Forms.Timer networkTimer;
         private System.Windows.Forms.Timer speedTimer; 
 
-        public MainForm()
+        public MainForm(bool startInBackground)
         {
             this.AutoScaleMode = AutoScaleMode.None;
+            isAppVisible = false; // به صورت پیش‌فرض مخفی است تا صفحه چشمک نزند
             
             LoadData();
-            AddToStartup();
+            AddToStartup(); 
             InitializeNetworkBaseline();
 
             trayIcon = new NotifyIcon();
-            // استخراج خودکار آیکون از خود فایل برنامه
-            trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            this.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); // تغییر آیکون پنجره‌های برنامه
+            
+            // جلوگیری از کرش کردن برنامه در صورت مشکل در خواندن آیکون
+            try {
+                trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                this.Icon = trayIcon.Icon;
+            } catch {
+                trayIcon.Icon = SystemIcons.Shield;
+            }
+            
             trayIcon.Text = "NetQuota Manager - فعال";
             trayIcon.Visible = true;
 
@@ -84,13 +96,31 @@ namespace NetQuotaManager
 
             BuildMainDashboard();
 
+            // اگر کاربر خودش برنامه را باز کرده باشد، بلافاصله پنل ورود را نمایش می‌دهیم
+            this.Load += (s, e) => 
+            {
+                if (!startInBackground)
+                {
+                    BeginInvoke(new Action(OpenAdminPanel));
+                }
+            };
+
             this.FormClosing += (s, e) => 
             {
                 if (e.CloseReason == CloseReason.UserClosing)
                 {
                     e.Cancel = true;
-                    this.Hide();
                     isAppVisible = false;
+                    this.Hide();
+                }
+            };
+
+            this.Resize += (s, e) => 
+            {
+                if (this.WindowState == FormWindowState.Minimized)
+                {
+                    isAppVisible = false;
+                    this.Hide();
                 }
             };
 
@@ -104,9 +134,14 @@ namespace NetQuotaManager
             LogAlert("سرویس مدیریت اینترنت شروع به کار کرد.");
         }
 
+        // مدیریت اصولی نمایش و عدم نمایش فرم
         protected override void SetVisibleCore(bool value)
         {
-            if (!isAppVisible) value = false;
+            if (!isAppVisible) 
+            {
+                value = false;
+                if (!this.IsHandleCreated) CreateHandle();
+            }
             base.SetVisibleCore(value);
         }
 
@@ -293,39 +328,47 @@ namespace NetQuotaManager
 
         private void AddToStartup()
         {
-    try
-    {
-        string exePath = Application.ExecutablePath;
-        
-        // ۱. ساخت یک تسک در ویندوز که برنامه را با دسترسی کامل ادمین هنگام ورود به سیستم اجرا کند
-        ProcessStartInfo psi = new ProcessStartInfo("schtasks", $"/create /tn \"NetQuotaManager\" /tr \"\\\"{exePath}\\\"\" /sc onlogon /rl highest /f")
-        {
-            CreateNoWindow = true,
-            UseShellExecute = false,
-            WindowStyle = ProcessWindowStyle.Hidden
-        };
-        Process.Start(psi);
+            try
+            {
+                string exePath = Application.ExecutablePath;
+                // ارسال برچسب -background برای استارتاپ ویندوز
+                ProcessStartInfo psi = new ProcessStartInfo("schtasks", $"/create /tn \"NetQuotaManager\" /tr \"\\\"{exePath}\\\" -background\" /sc onlogon /rl highest /f")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                Process.Start(psi);
 
-        // ۲. پاک کردن تنظیمات رجیستری قبلی که توسط ویندوز مسدود می‌شد
-        RegistryKey rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-        if (rk != null && rk.GetValue("NetQuotaManager") != null)
-        {
-            rk.DeleteValue("NetQuotaManager", false);
+                RegistryKey rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+                if (rk != null && rk.GetValue("NetQuotaManager") != null)
+                {
+                    rk.DeleteValue("NetQuotaManager", false);
+                }
+            }
+            catch { }
         }
-    }
-    catch { }
-}
 
         private void OpenAdminPanel()
         {
-            if (isAppVisible) return;
-            if (ShowLoginForm())
+            if (isAppVisible) 
             {
-                isAppVisible = true;
-                RefreshDashboardUI(); 
-                this.Show();
                 this.WindowState = FormWindowState.Normal;
                 this.BringToFront();
+                this.Activate();
+                return;
+            }
+
+            if (ShowLoginForm())
+            {
+                isAppVisible = true; // این خط کلید حل مشکل باز نشدن فرم است
+                this.ShowInTaskbar = true;
+                this.Visible = true;
+                this.WindowState = FormWindowState.Normal;
+                this.Show();
+                this.BringToFront();
+                this.Activate();
+                RefreshDashboardUI(); 
             }
         }
 
@@ -340,7 +383,8 @@ namespace NetQuotaManager
 
         private bool ShowLoginForm()
         {
-            Form loginForm = new Form() { Width = 850, Height = 550, FormBorderStyle = FormBorderStyle.FixedDialog, Text = "ورود مدیر", StartPosition = FormStartPosition.CenterScreen, MaximizeBox = false, MinimizeBox = false, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, BackColor = Color.White };
+            // اضافه شدن TopMost = true برای اینکه فرم ورود زیر پنجره‌های دیگر گم نشود
+            Form loginForm = new Form() { Width = 850, Height = 550, FormBorderStyle = FormBorderStyle.FixedDialog, Text = "ورود مدیر", StartPosition = FormStartPosition.CenterScreen, MaximizeBox = false, MinimizeBox = false, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, BackColor = Color.White, TopMost = true };
             Label lblLoginHeader = new Label() { Text = "ورود مدیریت", ForeColor = Color.FromArgb(30, 30, 40), Font = new Font("Tahoma", 18, FontStyle.Bold), Left = 50, Top = 100, AutoSize = true };
             TextBox txtPassword = new TextBox() { Left = 50, Top = 180, Width = 350, Height = 35, PasswordChar = '●', Font = new Font("Tahoma", 12) };
             Button btnSignIn = new Button() { Text = "تایید و ورود", Left = 50, Top = 230, Width = 350, Height = 45, BackColor = Color.FromArgb(13, 110, 253), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 11, FontStyle.Bold) };
@@ -369,8 +413,8 @@ namespace NetQuotaManager
             CreateDashboardPanel();
             CreateSettingsPanel(); 
             CreateMonitoringPanel();
-            CreateAlertsPanel(); // ساخت پنل هشدارها
-            CreateAccessControlPanel(); // ساخت پنل کنترل دسترسی
+            CreateAlertsPanel(); 
+            CreateAccessControlPanel(); 
 
             string[] menuItems = { "داشبورد", "پایش لحظه‌ای", "هشدارهای مصرف", "کنترل دسترسی اینترنت", "تنظیمات" };
             int topPos = 90;
@@ -382,12 +426,7 @@ namespace NetQuotaManager
                     foreach (Control ctrl in sidebar.Controls) if (ctrl is Button b) b.BackColor = Color.Transparent;
                     btnMenu.BackColor = Color.FromArgb(28, 54, 108);
 
-                    pnlDashboard.Visible = false;
-                    pnlSettings.Visible = false;
-                    pnlMonitoring.Visible = false;
-                    pnlAlerts.Visible = false;
-                    pnlAccessControl.Visible = false;
-                    
+                    pnlDashboard.Visible = false; pnlSettings.Visible = false; pnlMonitoring.Visible = false; pnlAlerts.Visible = false; pnlAccessControl.Visible = false;
                     speedTimer.Stop(); 
 
                     if (btnMenu.Tag.ToString() == "داشبورد") { pnlDashboard.Visible = true; RefreshDashboardUI(); }
@@ -462,8 +501,7 @@ namespace NetQuotaManager
         {
             pnlMonitoring = new Panel() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(245, 247, 250), Visible = false };
             Label lblHeaderTitle = new Label() { Text = "پایش لحظه‌ای ترافیک", Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, AutoSize = true };
-            Label lblHeaderSub = new Label() { Text = "نمایش سرعت زنده اینترنت سیستم (به‌روزرسانی هر ثانیه)", Font = new Font("Tahoma", 10), ForeColor = Color.Gray, Left = 30, Top = 60, AutoSize = true };
-            pnlMonitoring.Controls.Add(lblHeaderTitle); pnlMonitoring.Controls.Add(lblHeaderSub);
+            pnlMonitoring.Controls.Add(lblHeaderTitle); 
 
             Panel cardDown = new Panel() { Left = 30, Top = 110, Width = 400, Height = 180, BackColor = Color.White };
             cardDown.Controls.Add(new Label() { Text = "⬇️ سرعت دانلود فعلی", Font = new Font("Tahoma", 12, FontStyle.Bold), ForeColor = Color.FromArgb(13, 110, 253), Left = 20, Top = 20, AutoSize = true });
@@ -486,8 +524,7 @@ namespace NetQuotaManager
         {
             pnlAlerts = new Panel() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(245, 247, 250), Visible = false };
             Label lblHeaderTitle = new Label() { Text = "هشدارهای مصرف و رویدادها", Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, AutoSize = true };
-            Label lblHeaderSub = new Label() { Text = "لیست گزارش‌ها و اتفاقات مهم ثبت‌شده در سیستم", Font = new Font("Tahoma", 10), ForeColor = Color.Gray, Left = 30, Top = 60, AutoSize = true };
-            pnlAlerts.Controls.Add(lblHeaderTitle); pnlAlerts.Controls.Add(lblHeaderSub);
+            pnlAlerts.Controls.Add(lblHeaderTitle); 
 
             lstAlertsLog = new ListBox() { Left = 30, Top = 100, Width = 820, Height = 500, Font = new Font("Tahoma", 10), ForeColor = Color.FromArgb(40,40,50), IntegralHeight = false };
             pnlAlerts.Controls.Add(lstAlertsLog);
@@ -497,28 +534,25 @@ namespace NetQuotaManager
         {
             pnlAccessControl = new Panel() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(245, 247, 250), Visible = false };
             Label lblHeaderTitle = new Label() { Text = "کنترل دستی دسترسی اینترنت", Font = new Font("Tahoma", 16, FontStyle.Bold), Left = 30, Top = 25, AutoSize = true };
-            Label lblHeaderSub = new Label() { Text = "با استفاده از این بخش می‌توانید مستقل از سهمیه مصرف، اینترنت را قطع یا وصل کنید.", Font = new Font("Tahoma", 10), ForeColor = Color.Gray, Left = 30, Top = 60, AutoSize = true };
-            pnlAccessControl.Controls.Add(lblHeaderTitle); pnlAccessControl.Controls.Add(lblHeaderSub);
+            pnlAccessControl.Controls.Add(lblHeaderTitle); 
 
             Panel cardControl = new Panel() { Left = 30, Top = 110, Width = 820, Height = 200, BackColor = Color.White };
             
-            Button btnBlock = new Button() { Text = "⛔ قطع فوری اینترنت (مسدودسازی کامل)", Left = 50, Top = 70, Width = 320, Height = 55, BackColor = Color.FromArgb(220, 53, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 11, FontStyle.Bold) };
+            Button btnBlock = new Button() { Text = "⛔ قطع فوری اینترنت", Left = 50, Top = 70, Width = 320, Height = 55, BackColor = Color.FromArgb(220, 53, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 11, FontStyle.Bold) };
             btnBlock.Click += (s, e) => {
                 if (MessageBox.Show("آیا مطمئن هستید که می‌خواهید دسترسی اینترنت را فوراً قطع کنید؟", "تایید قطع", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes) {
                     CutInternetAccess(true);
                 }
             };
 
-            Button btnAllow = new Button() { Text = "✅ وصل فوری اینترنت (آزادسازی کامل)", Left = 430, Top = 70, Width = 320, Height = 55, BackColor = Color.FromArgb(40, 167, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 11, FontStyle.Bold) };
+            Button btnAllow = new Button() { Text = "✅ وصل فوری اینترنت", Left = 430, Top = 70, Width = 320, Height = 55, BackColor = Color.FromArgb(40, 167, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 11, FontStyle.Bold) };
             btnAllow.Click += (s, e) => {
                 if (MessageBox.Show("آیا مطمئن هستید که می‌خواهید دسترسی اینترنت را فعال کنید؟", "تایید اتصال", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) {
                     EnableInternetAccess(true);
                 }
             };
 
-            cardControl.Controls.Add(btnBlock);
-            cardControl.Controls.Add(btnAllow);
-            pnlAccessControl.Controls.Add(cardControl);
+            cardControl.Controls.Add(btnBlock); cardControl.Controls.Add(btnAllow); pnlAccessControl.Controls.Add(cardControl);
         }
 
         private void CreateSettingsPanel()
