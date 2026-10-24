@@ -5,11 +5,14 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    
-    <!-- فایل درخواست دسترسی ادمین -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    
-    <!-- فایل آیکون اختصاصی برنامه -->
     <ApplicationIcon>icon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- این بخش به برنامه می‌گوید فایل فونت را داخل خود کپی و نگهداری کند -->
+  <ItemGroup>
+    <Content Include="iransans.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
