@@ -14,7 +14,6 @@ namespace NetQuotaManager
         [STAThread]
         static void Main(string[] args)
         {
-            // بررسی اینکه آیا برنامه توسط خود کاربر باز شده یا توسط استارتاپ ویندوز
             bool startInBackground = false;
             if (args.Length > 0 && args[0] == "-background")
             {
@@ -64,15 +63,14 @@ namespace NetQuotaManager
         public MainForm(bool startInBackground)
         {
             this.AutoScaleMode = AutoScaleMode.None;
-            isAppVisible = false; // به صورت پیش‌فرض مخفی است تا صفحه چشمک نزند
+            isAppVisible = false; 
             
             LoadData();
-            AddToStartup(); 
+            RegisterStartupRobust(); // سیستم جدید و قدرتمند ثبت استارتاپ
             InitializeNetworkBaseline();
 
             trayIcon = new NotifyIcon();
             
-            // جلوگیری از کرش کردن برنامه در صورت مشکل در خواندن آیکون
             try {
                 trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
                 this.Icon = trayIcon.Icon;
@@ -96,7 +94,6 @@ namespace NetQuotaManager
 
             BuildMainDashboard();
 
-            // اگر کاربر خودش برنامه را باز کرده باشد، بلافاصله پنل ورود را نمایش می‌دهیم
             this.Load += (s, e) => 
             {
                 if (!startInBackground)
@@ -134,7 +131,6 @@ namespace NetQuotaManager
             LogAlert("سرویس مدیریت اینترنت شروع به کار کرد.");
         }
 
-        // مدیریت اصولی نمایش و عدم نمایش فرم
         protected override void SetVisibleCore(bool value)
         {
             if (!isAppVisible) 
@@ -326,27 +322,31 @@ namespace NetQuotaManager
             }
         }
 
-        private void AddToStartup()
+        // --- سیستم جدید و قدرتمند اجرای استارتاپ ---
+        private bool RegisterStartupRobust()
         {
             try
             {
                 string exePath = Application.ExecutablePath;
-                // ارسال برچسب -background برای استارتاپ ویندوز
-                ProcessStartInfo psi = new ProcessStartInfo("schtasks", $"/create /tn \"NetQuotaManager\" /tr \"\\\"{exePath}\\\" -background\" /sc onlogon /rl highest /f")
+                string userName = Environment.UserName;
+
+                // ثبت دوگانه: هم در رجیستری (پشتیبان) و هم در تسک اسکجولر به نام خود کاربر فعلی
+                RegistryKey rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+                if (rk != null) rk.SetValue("NetQuotaManager", $"\"{exePath}\" -background");
+
+                // پارامتر /ru باعث می‌شود برنامه در نشست اصلی کاربر باز شود، نه در نشست مخفی سیستم
+                ProcessStartInfo psi = new ProcessStartInfo("schtasks", $"/create /tn \"NetQuotaManager\" /tr \"\\\"{exePath}\\\" -background\" /sc onlogon /rl highest /ru \"{userName}\" /f")
                 {
                     CreateNoWindow = true,
                     UseShellExecute = false,
                     WindowStyle = ProcessWindowStyle.Hidden
                 };
-                Process.Start(psi);
-
-                RegistryKey rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-                if (rk != null && rk.GetValue("NetQuotaManager") != null)
-                {
-                    rk.DeleteValue("NetQuotaManager", false);
-                }
+                Process p = Process.Start(psi);
+                p.WaitForExit();
+                
+                return p.ExitCode == 0;
             }
-            catch { }
+            catch { return false; }
         }
 
         private void OpenAdminPanel()
@@ -361,7 +361,7 @@ namespace NetQuotaManager
 
             if (ShowLoginForm())
             {
-                isAppVisible = true; // این خط کلید حل مشکل باز نشدن فرم است
+                isAppVisible = true; 
                 this.ShowInTaskbar = true;
                 this.Visible = true;
                 this.WindowState = FormWindowState.Normal;
@@ -383,7 +383,6 @@ namespace NetQuotaManager
 
         private bool ShowLoginForm()
         {
-            // اضافه شدن TopMost = true برای اینکه فرم ورود زیر پنجره‌های دیگر گم نشود
             Form loginForm = new Form() { Width = 850, Height = 550, FormBorderStyle = FormBorderStyle.FixedDialog, Text = "ورود مدیر", StartPosition = FormStartPosition.CenterScreen, MaximizeBox = false, MinimizeBox = false, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, BackColor = Color.White, TopMost = true };
             Label lblLoginHeader = new Label() { Text = "ورود مدیریت", ForeColor = Color.FromArgb(30, 30, 40), Font = new Font("Tahoma", 18, FontStyle.Bold), Left = 50, Top = 100, AutoSize = true };
             TextBox txtPassword = new TextBox() { Left = 50, Top = 180, Width = 350, Height = 35, PasswordChar = '●', Font = new Font("Tahoma", 12) };
@@ -582,20 +581,21 @@ namespace NetQuotaManager
             cardSecurity.Controls.Add(btnChangePass); pnlSettings.Controls.Add(cardSecurity);
 
             Panel cardAlerts = new Panel() { Left = 450, Top = 90, Width = 400, Height = 280, BackColor = Color.White };
-            cardAlerts.Controls.Add(new Label() { Text = "🔔 تنظیمات مصرف و هشدارها", Font = new Font("Tahoma", 12, FontStyle.Bold), Left = 20, Top = 20, AutoSize = true });
-            cardAlerts.Controls.Add(new Label() { Text = "درصد آستانه هشدار پایان حجم:", Font = new Font("Tahoma", 10), Left = 20, Top = 70, AutoSize = true });
-            NumericUpDown numWarn = new NumericUpDown() { Left = 250, Top = 68, Width = 80, Font = new Font("Tahoma", 10), Minimum = 10, Maximum = 99, Value = warningThreshold };
-            cardAlerts.Controls.Add(numWarn);
-            Button btnSaveAlerts = new Button() { Text = "ذخیره تنظیمات هشدار", Left = 110, Top = 120, Width = 220, Height = 35, BackColor = Color.FromArgb(40, 167, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 10, FontStyle.Bold) };
-            btnSaveAlerts.Click += (s, e) => {
-                warningThreshold = (int)numWarn.Value; SaveData();
-                LogAlert($"آستانه هشدار مصرف روی {warningThreshold}٪ تنظیم شد.");
-                MessageBox.Show($"هشدار مصرف روی {warningThreshold}٪ تنظیم شد.", "موفقیت", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            cardAlerts.Controls.Add(new Label() { Text = "🔔 تنظیمات استارتاپ و سیستم", Font = new Font("Tahoma", 12, FontStyle.Bold), Left = 20, Top = 20, AutoSize = true });
+            
+            // دکمه جدید برای تعمیر دستی استارتاپ کاربر
+            Button btnFixStartup = new Button() { Text = "تعمیر و فعال‌سازی مجدد اجرای خودکار (Startup)", Left = 30, Top = 80, Width = 340, Height = 40, BackColor = Color.DarkOrange, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 9, FontStyle.Bold) };
+            btnFixStartup.Click += (s, e) => {
+                if(RegisterStartupRobust()) {
+                    MessageBox.Show("اجرای خودکار برنامه در پس‌زمینه با موفقیت فعال و تعمیر شد.", "موفقیت", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                } else {
+                    MessageBox.Show("خطا در ثبت استارتاپ! لطفاً برنامه را یک بار با کلیک راست و گزینه Run as Administrator باز کنید.", "خطای دسترسی", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             };
-            cardAlerts.Controls.Add(btnSaveAlerts);
+            cardAlerts.Controls.Add(btnFixStartup);
 
-            cardAlerts.Controls.Add(new Label() { Text = "عملیات ویژه:", Font = new Font("Tahoma", 10, FontStyle.Bold), ForeColor = Color.Red, Left = 20, Top = 180, AutoSize = true });
-            Button btnResetUsage = new Button() { Text = "صفر کردن مصرف فعلی (بدون تغییر سقف)", Left = 50, Top = 210, Width = 280, Height = 35, BackColor = Color.FromArgb(220, 53, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 9, FontStyle.Bold) };
+            cardAlerts.Controls.Add(new Label() { Text = "عملیات ویژه:", Font = new Font("Tahoma", 10, FontStyle.Bold), ForeColor = Color.Red, Left = 20, Top = 160, AutoSize = true });
+            Button btnResetUsage = new Button() { Text = "صفر کردن مصرف فعلی (بدون تغییر سقف)", Left = 50, Top = 190, Width = 280, Height = 35, BackColor = Color.FromArgb(220, 53, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 9, FontStyle.Bold) };
             btnResetUsage.Click += (s, e) => {
                 if (MessageBox.Show("آیا مطمئن هستید که می‌خواهید مصرف فعلی را صفر کنید؟", "تایید", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) {
                     currentUsageBytes = 0; hasShownWarning = false; SaveData(); InitializeNetworkBaseline();
